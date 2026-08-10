@@ -47,9 +47,8 @@ vector<string>SplitString(string& line,string delimiter = ",")
     vector<string> fields;
     string field;
     int pos = 0;
-    while (pos != -1) // if not exist find() -> returns -1
+    while ((pos = (int) line.find(delimiter)) != -1) // if not exist find() -> returns -1
     {
-        pos = line.find(delimiter);
         field = line.substr(0,pos); // we remove the previous field, so next one we start from index 0
         fields.push_back(field);
         line.erase(0,pos + delimiter.length());
@@ -57,6 +56,7 @@ vector<string>SplitString(string& line,string delimiter = ",")
     fields.push_back(line); // after finshing, we need to add last field "ok"
     return fields;
 }
+
 
 void WriteFileLines(string& path,vector<string>& lines) // to do a bool append or overwrite
 {
@@ -70,6 +70,10 @@ void WriteFileLines(string& path,vector<string>& lines) // to do a bool append o
     fout.close();
 }
 
+
+// ^ --------------------------- Main Entites --------------------------------
+
+
 struct User
 {
     int id;
@@ -78,6 +82,10 @@ struct User
     string name;
     string email;
     int allow_anonymous_qs;
+
+    vector<int> questions_to_me_ids;
+    vector<int> questions_from_me_ids;
+
     User()
     {
 
@@ -136,12 +144,12 @@ struct Question
         string prefix = ""; // to write thread or question
 
         if(parent_question_id != -1)
-            prefix = "\tthread";
+            prefix = "\tThread: ";
 
         cout<<prefix<<"Question Id ("<<question_id<<")";
 
         if(!is_anonymous_qs)
-            cout<<"from user id("<<from_user_id<<")";
+            cout<<" from user id ("<<from_user_id<<")";
 
         cout<<"\tQuestion: "<<text;
 
@@ -150,7 +158,19 @@ struct Question
 
         cout<<"\n";
     }
+    void Print_Question_from()
+    {
 
+        cout<<"Question Id ("<<question_id<<") ";
+        if(is_anonymous_qs)
+            cout<<"-> Anonymous <- ";
+        cout<<"to user id("<<to_user_id<<") ";
+        cout<<"Question: "<<text;
+        if(answer != "")
+            cout<<" Answer: "<<answer<<"\n";
+        else
+            cout<<"Not Answered YET\n";
+    }
     string To_Line()
     {
         ostringstream oss;
@@ -160,6 +180,10 @@ struct Question
     }
 
 };
+
+
+// ^ --------------------------- Controllers ---------------------------------
+
 
 struct User_Controller
 {
@@ -193,11 +217,21 @@ struct User_Controller
         {
             User user(line);
             last_id = max(last_id,user.id);
-            username_object_map[user.name] = user;
+            username_object_map[user.username] = user;
         }
     }
+    void Update_User()
+    {
+        vector<string> lines;
+        string path = "data/users.txt";
+        for(auto &pair : username_object_map)
+            lines.push_back(pair.second.Toline());
+        WriteFileLines(path,lines);
+    }
+    
     void Login()
     {
+        Load_Users();
         while (true)
         {
             cout<<"Enter usename & Password";
@@ -238,6 +272,7 @@ struct User_Controller
         current_user.id = ++last_id;
         username_object_map[current_user.username] = current_user;
         cout << "User added successfully.\n";
+        Update_User();
         Login();
     }
 
@@ -289,6 +324,8 @@ struct Question_Controller
     {
         Load_Quesitons();
         int question_id = Read_Question_Id(user);
+        if(question_id == -1)
+            return;
         Question& question = QsId_object_map[question_id];
         question.Print_Question_To();
         if(question.answer != "")
@@ -296,7 +333,7 @@ struct Question_Controller
         cout<<"Enter Answer: ";
         cin.ignore();
         getline(cin,question.answer);
-
+        Update_Questions();
     }
     
     int Read_Question_Id(User &user)
@@ -331,9 +368,10 @@ struct Question_Controller
         return qs_id;
         
     }
-    void Ask_Question(User& user,pair<int,int>& to_user_pair)
+    void Ask_Question(User& user,pair<int,int>& to_user_pair) // ! warning
     {
         Question question;
+        
         if(!to_user_pair.second){
             cout<<"Note: Anonymous questions are not allowed for this user\n";
             question.is_anonymous_qs = 0;}
@@ -354,8 +392,26 @@ struct Question_Controller
             parentQsId_childQsId_map[question.question_id].push_back(question.question_id);
         else
             parentQsId_childQsId_map[question.parent_question_id].push_back(question.question_id);
-    }
+        user.questions_from_me_ids.push_back(question.question_id); //! ##### new
 
+        Update_Questions();
+    }
+    void print_qs_to_user(int& to_user_id)
+    {
+        for(auto pair : QsId_object_map)
+        {
+            if(pair.second.to_user_id == to_user_id)
+                pair.second.Print_Question_To();
+        }
+    }
+    void print_qs_from_user(int& from_user_id)
+    {
+        for(auto& pair : QsId_object_map)
+        {
+            if(pair.second.from_user_id == from_user_id)
+                pair.second.Print_Question_from();
+        }
+    }
 };
 
 struct AskMe_System
@@ -363,14 +419,21 @@ struct AskMe_System
     User_Controller user_controller;
     Question_Controller question_controller;
 
-
+    void Print_Qs_To_Me()
+    {
+        question_controller.print_qs_to_user(user_controller.current_user.id);
+    }
+    void Print_Qs_From_Me()
+    {
+        question_controller.print_qs_from_user(user_controller.current_user.id);
+    }
     void Answer_Question()
     {
-        cout<<"Enetr Question id or -1 to cancel";
-        int qs_id;
-        cin>>qs_id;
-        if(qs_id == -1)
-            return;
+        // cout<<"Enetr Question id or -1 to cancel";
+        // int qs_id;
+        // cin>>qs_id;
+        // if(qs_id == -1)
+        //     return;
         question_controller.Answer_Question(user_controller.current_user);
     }
     void Ask_Question()
@@ -384,6 +447,7 @@ struct AskMe_System
     void Load_Database()
     {
         question_controller.Load_Quesitons();
+        user_controller.Load_Users();
 
     }
     void AccessSystem()
@@ -419,15 +483,22 @@ struct AskMe_System
     
     void run()
     {
+        Load_Database();
         AccessSystem();
         while (true)
         {
+            Load_Database();
             int choice = second_menu();
+            if(choice == 1)
+                Print_Qs_To_Me();
+            else if(choice == 2)
+                Print_Qs_From_Me();
             if(choice == 3)
                 Answer_Question();
             else if(choice == 5)
                 Ask_Question();
-            
+            else if(choice == 8)
+                AccessSystem();
         }
     }
 
