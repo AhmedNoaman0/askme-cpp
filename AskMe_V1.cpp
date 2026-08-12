@@ -424,25 +424,27 @@ struct Question_Controller
         
         if(question_id == -1)
             return;
+        
+        vector<int> ids_to_remove;
 
-        // Delete threads in case of parent qs
+        // Delete all threads in case of parent qs
         if(QsId_object_map[question_id].parent_question_id == -1)
         {
-            // remove childs
-            for(int id : parentQsId_childQsId_map[question_id])
-                QsId_object_map.erase(id);
-            //remove parent & pair
+            ids_to_remove = parentQsId_childQsId_map[question_id];
             parentQsId_childQsId_map.erase(question_id);
-            QsId_object_map.erase(question_id);
-            return;
+            ids_to_remove.push_back(question_id);
         }
-        //remove from parent map
-        int p_id = QsId_object_map[question_id].parent_question_id;
-        auto& v = parentQsId_childQsId_map[p_id];
-        v.erase(find(v.begin(), v.end(), question_id));
-        //remove from All Questions map
+        else // in case of child qs
+        {
+            auto& children = parentQsId_childQsId_map[QsId_object_map[question_id].parent_question_id];
+            auto it = find(children.begin(), children.end(), question_id); // target index
+            children.erase(it);
+            ids_to_remove.push_back(question_id);
+        }
 
-        QsId_object_map.erase(question_id);
+        for(auto id : ids_to_remove) // remove questions from main map
+            QsId_object_map.erase(id);
+
         Update_Questions();
 
     }
