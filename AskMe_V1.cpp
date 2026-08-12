@@ -4,7 +4,7 @@
 #include<sstream>
 #include<fstream>
 #include<cassert>
-
+#include <algorithm>
 using namespace std;
 
 // ^ --------------------------- Helper Functions ---------------------------
@@ -320,10 +320,11 @@ struct Question_Controller
 
         WriteFileLines(path,lines);
     }
-    void Answer_Question(User& user)
+    
+    void Answer_Question(int user_id)
     {
         Load_Quesitons();
-        int question_id = Read_Question_Id(user);
+        int question_id = Read_Question_Id(user_id,true);
         if(question_id == -1)
             return;
         Question& question = QsId_object_map[question_id];
@@ -336,23 +337,27 @@ struct Question_Controller
         Update_Questions();
     }
     
-    int Read_Question_Id(User &user)
+    int Read_Question_Id(int &user_id, bool to_only = false)
     {
-        cout<<"Enetr Question id or -1 to cancel";
+        cout<<"Enter Question id or -1 to cancel";
         int qs_id;
         cin>>qs_id;
         if(qs_id == -1)
             return -1;
         if(!QsId_object_map.count(qs_id)){
-            cout << "No thread question with such ID. Try againز\n";
-            return Read_Question_Id(user);}
+            cout << "No thread question with such ID. Try again.\n";
+            return Read_Question_Id(user_id,to_only);}
         
         Question &question = QsId_object_map[qs_id];
-        if(question.to_user_id != user.id){
-            cout << "This question is not for you.\n";
-            return Read_Question_Id(user);}
-        return qs_id;
 
+        if((question.to_user_id != user_id) && to_only){
+            cout << "This question is not for you.\n";
+            return Read_Question_Id(user_id,to_only);}
+        else if((question.from_user_id != user_id) && (question.to_user_id != user_id))
+        {
+            cout << "This question is not related to you.\n";
+            return Read_Question_Id(user_id,to_only);}
+        return qs_id;
     }
 
     int read_parentQs_id()
@@ -412,6 +417,36 @@ struct Question_Controller
                 pair.second.Print_Question_from();
         }
     }
+
+    void delete_question(int& user_id)
+    {
+        int question_id = Read_Question_Id(user_id) ;
+        
+        if(question_id == -1)
+            return;
+
+        // Delete threads in case of parent qs
+        if(QsId_object_map[question_id].parent_question_id == -1)
+        {
+            // remove childs
+            for(int id : parentQsId_childQsId_map[question_id])
+                QsId_object_map.erase(id);
+            //remove parent & pair
+            parentQsId_childQsId_map.erase(question_id);
+            QsId_object_map.erase(question_id);
+            return;
+        }
+        //remove from parent map
+        int p_id = QsId_object_map[question_id].parent_question_id;
+        auto& v = parentQsId_childQsId_map[p_id];
+        v.erase(find(v.begin(), v.end(), question_id));
+        //remove from All Questions map
+
+        QsId_object_map.erase(question_id);
+        Update_Questions();
+
+    }
+
 };
 
 struct AskMe_System
@@ -423,10 +458,12 @@ struct AskMe_System
     {
         question_controller.print_qs_to_user(user_controller.current_user.id);
     }
+    
     void Print_Qs_From_Me()
     {
         question_controller.print_qs_from_user(user_controller.current_user.id);
     }
+    
     void Answer_Question()
     {
         // cout<<"Enetr Question id or -1 to cancel";
@@ -434,8 +471,15 @@ struct AskMe_System
         // cin>>qs_id;
         // if(qs_id == -1)
         //     return;
-        question_controller.Answer_Question(user_controller.current_user);
+        question_controller.Answer_Question(user_controller.current_user.id);
     }
+    
+    void Delete_Question()
+    {
+        question_controller.delete_question(user_controller.current_user.id);
+        question_controller.Update_Questions();
+    }
+
     void Ask_Question()
     {
         pair to_user_id = user_controller.ReadUserId();
@@ -493,8 +537,10 @@ struct AskMe_System
                 Print_Qs_To_Me();
             else if(choice == 2)
                 Print_Qs_From_Me();
-            if(choice == 3)
+            else if(choice == 3)
                 Answer_Question();
+            else if(choice == 4)
+                Delete_Question();
             else if(choice == 5)
                 Ask_Question();
             else if(choice == 8)
